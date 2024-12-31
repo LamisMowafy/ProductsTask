@@ -22,7 +22,8 @@ if (app.Environment.IsDevelopment())
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1");
     });
 }
-app.UseAuthorization();
+app.UseAuthentication();   
+app.UseAuthorization();   
 app.MapControllers();
 app.UseHttpsRedirection();
 app.Run();

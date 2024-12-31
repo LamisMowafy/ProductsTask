@@ -3,6 +3,7 @@ using AutoMapper;
 using Domain.Models;
 using FluentValidation.Results;
 using Infrastructure.Interfaces;
+using Microsoft.AspNetCore.Http;
 using Moq;
 
 public class CreateProductHandlerTests
@@ -10,12 +11,13 @@ public class CreateProductHandlerTests
     private readonly Mock<IProductRepository> _productRepositoryMock;
     private readonly Mock<IMapper> _mapperMock;
     private readonly CreateProductHandler _handler;
-
+    private readonly Mock<IHttpContextAccessor> _httpContextAccessor;
     public CreateProductHandlerTests()
     {
         _productRepositoryMock = new Mock<IProductRepository>();
         _mapperMock = new Mock<IMapper>();
-        _handler = new CreateProductHandler(_productRepositoryMock.Object, _mapperMock.Object);
+        _httpContextAccessor = new Mock<IHttpContextAccessor>();
+        _handler = new CreateProductHandler(_productRepositoryMock.Object, _mapperMock.Object, _httpContextAccessor.Object);
     }
 
     [Fact]

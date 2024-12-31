@@ -5,7 +5,9 @@ using Application.Services.Product.Queries.GetDetail;
 using Application.Services.Product.Queries.GetList;
 using Domain.DTOs.Product;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+
 
 namespace ProductTask.Controllers
 {
@@ -14,7 +16,6 @@ namespace ProductTask.Controllers
     public class ProductsController : ControllerBase
     {
         private readonly IMediator _mediator;
-
         public ProductsController(IMediator mediator)
         {
             _mediator = mediator;
@@ -23,17 +24,17 @@ namespace ProductTask.Controllers
         [HttpGet("all", Name = "GetAllProducts")]
         public async Task<ActionResult<List<ProductDto>>> GetAllProducts()
         {
-            var dtos = await _mediator.Send(new GetProductsListQuery());
+            List<ProductDto> dtos = await _mediator.Send(new GetProductsListQuery());
             return Ok(dtos);
         }
 
         [HttpGet("{id}", Name = "GetProductById")]
         public async Task<ActionResult<ProductDto>> GetProductById(long id)
         {
-            var getDetailQuery = new GetProductDetailQuery() { ProductId = id };
+            GetProductDetailQuery getDetailQuery = new() { ProductId = id };
             return Ok(await _mediator.Send(getDetailQuery));
         }
-
+        [Authorize(Policy = "Admin")]
         [HttpPost(Name = "AddProduct")]
         public async Task<ActionResult<long>> Create([FromBody] CreateProduct createCommand)
         {
@@ -51,7 +52,7 @@ namespace ProductTask.Controllers
         [HttpDelete("{id}", Name = "DeleteProduct")]
         public async Task<ActionResult> Delete(long id)
         {
-            var deleteCommand = new DeleteProduct() { ProductId = id };
+            DeleteProduct deleteCommand = new() { ProductId = id };
             await _mediator.Send(deleteCommand);
             return NoContent();
         }
