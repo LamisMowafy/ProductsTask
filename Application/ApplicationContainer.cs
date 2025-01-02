@@ -1,17 +1,16 @@
 ﻿using Application.Profiles;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Resource;
 
 namespace Application
 {
     public static class ApplicationContainer
     {
-        public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+        public static IServiceCollection AddApplicationServices(this IServiceCollection services) // Add IConfiguration parameter
         {
-            //builder.Services.AddScoped<IProductService, ProductService>();
-            //builder.Services.AddScoped<ICommandHandler<CreateProductCommand>, CreateProductCommandHandler>();
-            //builder.Services.AddScoped<IQueryHandler<GetProductsQuery, IEnumerable<Product>>, GetProductsQueryHandler>();
             services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+            services.AddScoped<IResourceHelper, ResourceHelper>();
             services.AddAutoMapper(typeof(AutoMapperProfile).Assembly);
             services.AddMediatR(config =>
             {

@@ -1,81 +1,160 @@
-﻿using Application.Services.Product.Command.Update;
+﻿using Moq;
 using AutoMapper;
+using Xunit;
+using Microsoft.AspNetCore.Http;
+using MediatR;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Security.Claims;
+using System.Linq;
+using System.Net;
 using Domain.Models;
 using Infrastructure.Interfaces;
-using MediatR;
-using Moq;
+using Application.Services.Product.Command.Update;
+using FluentValidation;
+using System;
+using Resource;
 
-public class UpdateProductHandlerTests
+namespace Application.Tests
 {
-    private readonly Mock<IRepository<Products>> _productRepositoryMock;
-    private readonly Mock<IMapper> _mapperMock;
-    private readonly UpdateProductHandler _handler;
-
-    public UpdateProductHandlerTests()
+    public class UpdateProductHandlerTests
     {
-        _productRepositoryMock = new Mock<IRepository<Products>>();
-        _mapperMock = new Mock<IMapper>();
-        _handler = new UpdateProductHandler(_productRepositoryMock.Object, _mapperMock.Object);
-    }
+        private readonly Mock<IRepository<Products>> _mockProductRepository;
+        private readonly Mock<IMapper> _mockMapper;
+        private readonly Mock<IHttpContextAccessor> _mockHttpContextAccessor;
+        private readonly Mock<IResourceHelper> _mockResourceHelper;
+        private readonly UpdateProductHandler _handler;
 
-    [Fact]
-    public async Task Handle_ValidRequest_UpdatesProduct()
-    {
-        // Arrange
-        UpdateProduct updateProductRequest = new()
+        public UpdateProductHandlerTests()
         {
-            Id = 1,
-            Name = "Updated Product Name",
-            Price = 20.0m
-        };
+            _mockProductRepository = new Mock<IRepository<Products>>();
+            _mockMapper = new Mock<IMapper>();
+            _mockHttpContextAccessor = new Mock<IHttpContextAccessor>();
+            _mockResourceHelper = new Mock<IResourceHelper>();
 
-        Products product = new()
+            _handler = new UpdateProductHandler(
+                _mockProductRepository.Object,
+                _mockMapper.Object,
+                _mockHttpContextAccessor.Object,
+                _mockResourceHelper.Object
+            );
+        }
+
+        [Fact]
+        public async Task Handle_ShouldReturnUnauthorized_WhenUserIsNotAdmin()
         {
-            Id = 1,
-            Name = "Old Product Name",
-            Price = 10.0m
-        };
+            // Arrange
+            var updateProductRequest = new UpdateProduct { Id = 1, /* Populate with necessary data */ };
+            var claimsPrincipal = new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "testuser")
+            }));
 
-        // Mock the IMapper to return the mapped Products object
-        _mapperMock.Setup(m => m.Map<Products>(It.IsAny<UpdateProduct>())).Returns(product);
+            _mockHttpContextAccessor.Setup(x => x.HttpContext.User).Returns(claimsPrincipal);
 
-        // Mock the repository to simulate updating the product
-        _productRepositoryMock.Setup(r => r.UpdateAsync(It.IsAny<Products>()))
-            .Returns(Task.CompletedTask);
+            // Act
+            var result = await _handler.Handle(updateProductRequest, CancellationToken.None);
 
-        // Act
-        Unit result = await _handler.Handle(updateProductRequest, CancellationToken.None);
+            // Assert
+            Assert.Equal(HttpStatusCode.Unauthorized, result.statusCode);
+        }
 
-        // Assert
-        Assert.Equal(Unit.Value, result); // Ensure the return value is Unit.Value
-        _productRepositoryMock.Verify(r => r.UpdateAsync(It.IsAny<Products>()), Times.Once); // Ensure UpdateAsync was called once
-    }
-
-    [Fact]
-    public async Task Handle_ProductNotFound_ThrowsException()
-    {
-        // Arrange
-        UpdateProduct updateProductRequest = new()
+        [Fact]
+        public async Task Handle_ShouldReturnFailure_WhenValidationFails()
         {
-            Id = 999, // Non-existent ProductId
-            Name = "Updated Product",
-            Price = 25.0m
-        };
+            // Arrange
+            var updateProductRequest = new UpdateProduct { Id = 1, /* Populate with invalid data */ };
+            var claimsPrincipal = new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "testuser"),
+                new Claim(ClaimTypes.Role, "Admin")
+            }));
 
-        // Mock the IMapper to map to a product (even though it's non-existent)
-        Products product = new()
+            _mockHttpContextAccessor.Setup(x => x.HttpContext.User).Returns(claimsPrincipal);
+
+            // Mock the validation failure
+            var validator = new UpdateValidator();
+            var validationResult = new FluentValidation.Results.ValidationResult(new[]
+            {
+                new FluentValidation.Results.ValidationFailure("Field", "Invalid value")
+            });
+            _mockResourceHelper.Setup(x => x.Shared("NOT_VALID")).Returns("Invalid data");
+
+            // Act
+            var result = await _handler.Handle(updateProductRequest, CancellationToken.None);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.Forbidden, result.statusCode);
+        }
+
+        [Fact]
+        public async Task Handle_ShouldReturnNotFound_WhenProductDoesNotExist()
         {
-            Id = 999,
-            Name = updateProductRequest.Name,
-            Price = updateProductRequest.Price
-        };
+            // Arrange
+            var updateProductRequest = new UpdateProduct { Id = 1,Name="test",Description="desc" /* Populate with valid data */ };
+            var claimsPrincipal = new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "testuser"),
+                new Claim(ClaimTypes.Role, "Admin")
+            }));
 
-        // Simulate no matching product by having the repository return null or not updating anything
-        _productRepositoryMock.Setup(r => r.UpdateAsync(It.IsAny<Products>()))
-            .ThrowsAsync(new Exception("Product not found"));
+            _mockHttpContextAccessor.Setup(x => x.HttpContext.User).Returns(claimsPrincipal);
 
-        // Act & Assert
-        Exception exception = await Assert.ThrowsAsync<Exception>(() => _handler.Handle(updateProductRequest, CancellationToken.None));
-        Assert.Equal("Product not found", exception.Message); // You can customize the exception message based on your handler logic
+            // Simulate that the product does not exist in the repository
+            _mockProductRepository.Setup(repo => repo.GetByIdAsync(It.IsAny<long>())).ReturnsAsync((Products)null);
+            _mockResourceHelper.Setup(x => x.Product("ERRORMESSAGE_PRODUCT_NOT_EXIST")).Returns("Product not found");
+
+            // Act
+            var result = await _handler.Handle(updateProductRequest, CancellationToken.None);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.NotFound, result.statusCode);
+        }
+
+        [Fact]
+        public async Task Handle_ShouldReturnSuccess_WhenProductIsUpdated()
+        {
+            // Arrange
+            var updateProductRequest = new UpdateProduct { Id = 1, Name = "test", Description = "desc" /* Populate with valid data */ };
+            var claimsPrincipal = new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "testuser"),
+                new Claim(ClaimTypes.Role, "Admin")
+            }));
+
+            _mockHttpContextAccessor.Setup(x => x.HttpContext.User).Returns(claimsPrincipal);
+            var product = new Products { Id = 1, /* Set existing product properties */ };
+            _mockProductRepository.Setup(repo => repo.GetByIdAsync(It.IsAny<long>())).ReturnsAsync(product);
+            _mockProductRepository.Setup(repo => repo.UpdateAsync(It.IsAny<Products>())).Returns(Task.CompletedTask);
+            _mockResourceHelper.Setup(x => x.Product("SUCCESSMESSAGE_PRODUCT_UPDATED")).Returns("Product updated successfully");
+
+            // Act
+            var result = await _handler.Handle(updateProductRequest, CancellationToken.None);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, result.statusCode);
+        }
+
+        [Fact]
+        public async Task Handle_ShouldReturnInternalError_WhenExceptionOccurs()
+        {
+            // Arrange
+            var updateProductRequest = new UpdateProduct { Id = 1, Name = "test", Description = "desc" /* Populate with necessary data */ };
+            var claimsPrincipal = new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "testuser"),
+                new Claim(ClaimTypes.Role, "Admin")
+            }));
+
+            _mockHttpContextAccessor.Setup(x => x.HttpContext.User).Returns(claimsPrincipal);
+            _mockProductRepository.Setup(repo => repo.GetByIdAsync(It.IsAny<long>())).Throws(new Exception("Internal error"));
+            _mockResourceHelper.Setup(x => x.Shared("ERROREMESSAGE_INTERNAL")).Returns("Internal server error");
+
+            // Act
+            var result = await _handler.Handle(updateProductRequest, CancellationToken.None);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.InternalServerError, result.statusCode);
+        }
     }
 }

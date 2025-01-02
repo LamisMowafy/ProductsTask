@@ -2,7 +2,7 @@
 
 namespace Domain.Models
 {
-    public class Promotion : AuditableEntity
+    public class Promotions : AuditableEntity
     {
         public string Code { get; set; }
         public string Description { get; set; }

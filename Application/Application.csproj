@@ -13,12 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Domain\Domain.csproj" />
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Services\Promotion\Command\Create\" />
-    <Folder Include="Services\Promotion\Command\Delete\" />
-    <Folder Include="Services\Promotion\Command\Update\" />
+    <ProjectReference Include="..\Resource\Resource.csproj" />
   </ItemGroup>
 
   <ItemGroup>

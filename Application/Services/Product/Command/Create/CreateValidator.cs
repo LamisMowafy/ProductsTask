@@ -9,7 +9,7 @@ namespace Application.Services.Product.Command.Create
             RuleFor(p => p.Name)
                 .NotEmpty()
                 .NotNull()
-                .MaximumLength(100);
+                .MaximumLength(200);
             RuleFor(p => p.Description)
                 .NotEmpty()
                 .NotNull();

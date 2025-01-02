@@ -16,8 +16,6 @@ namespace Domain.Common
         [JsonIgnore]
         public long ModifiedBy { get; set; }
         [JsonIgnore]
-        public DateTime ModifiedOn { get; set; }
-        [JsonIgnore]
-        public bool IsDeleted { get; set; }
+        public DateTime ModifiedOn { get; set; } 
     }
 }

@@ -1,11 +1,10 @@
-﻿using Infrastructure.Utils.Interfaces;
-using Microsoft.AspNetCore.Identity.Data;
+﻿using Application.DTOs;
+using Infrastructure.Utils.Interfaces;
 using Microsoft.AspNetCore.Mvc;
-using Application.DTOs;
 namespace ProductTask.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("[controller]")]
     public class UserController : ControllerBase
     {
         private readonly IJwtToken _jwtTokenService;

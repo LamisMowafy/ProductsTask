@@ -1,4 +1,5 @@
 ﻿using Domain.Common;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Domain.Models
 {
@@ -6,8 +7,7 @@ namespace Domain.Models
     {
         public long ProductId { get; set; }
         public Products Product { get; set; }
-
         public long PromotionId { get; set; }
-        public Promotion Promotion { get; set; }
+        public Promotions Promotion { get; set; }
     }
 }

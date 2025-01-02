@@ -1,81 +1,133 @@
 ﻿using Application.Services.Product.Command.Create;
 using AutoMapper;
 using Domain.Models;
-using FluentValidation.Results;
 using Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Moq;
+using Resource;
+using System.Net;
+using System.Security.Claims;
 
-public class CreateProductHandlerTests
+namespace ProductTestProject.Controller
 {
-    private readonly Mock<IProductRepository> _productRepositoryMock;
-    private readonly Mock<IMapper> _mapperMock;
-    private readonly CreateProductHandler _handler;
-    private readonly Mock<IHttpContextAccessor> _httpContextAccessor;
-    public CreateProductHandlerTests()
+    public class CreateProductHandlerTests
     {
-        _productRepositoryMock = new Mock<IProductRepository>();
-        _mapperMock = new Mock<IMapper>();
-        _httpContextAccessor = new Mock<IHttpContextAccessor>();
-        _handler = new CreateProductHandler(_productRepositoryMock.Object, _mapperMock.Object, _httpContextAccessor.Object);
-    }
+        private readonly Mock<IProductRepository> _mockProductRepository;
+        private readonly Mock<IMapper> _mockMapper;
+        private readonly Mock<IHttpContextAccessor> _mockHttpContextAccessor;
+        private readonly Mock<IResourceHelper> _mockResourceHelper;
+        private readonly CreateProductHandler _handler;
 
-    [Fact]
-    public async Task Handle_ValidRequest_ReturnsProductId()
-    {
-        // Arrange
-        CreateProduct createProductRequest = new()
+        public CreateProductHandlerTests()
         {
-            // Initialize your CreateProduct request here, for example:
-            Name = "Test Product",
-            Price = 10.0m
-        };
-        Products product = new()
+            _mockProductRepository = new Mock<IProductRepository>();
+            _mockMapper = new Mock<IMapper>();
+            _mockHttpContextAccessor = new Mock<IHttpContextAccessor>();
+            _mockResourceHelper = new Mock<IResourceHelper>();
+
+            _handler = new CreateProductHandler(
+                _mockProductRepository.Object,
+                _mockMapper.Object,
+                _mockHttpContextAccessor.Object,
+                _mockResourceHelper.Object
+            );
+        }
+
+        [Fact]
+        public async Task Handle_ShouldReturnUnauthorized_WhenUserIsNotAdmin()
         {
-            Id = 1,
-            Name = createProductRequest.Name,
-            Price = createProductRequest.Price
-        };
+            // Arrange
+            CreateProduct createProductRequest = new() { /* Populate with necessary data */ };
+            ClaimsPrincipal claimsPrincipal = new(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "testuser")
+            }));
 
-        // Mock the IMapper to return the mapped Products object
-        _mapperMock.Setup(m => m.Map<Products>(It.IsAny<CreateProduct>())).Returns(product);
+            _mockHttpContextAccessor.Setup(x => x.HttpContext.User).Returns(claimsPrincipal);
 
-        // Mock validation to succeed
-        Mock<CreateValidator> validatorMock = new();
-        validatorMock.Setup(v => v.ValidateAsync(createProductRequest, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ValidationResult());
+            // Act
+            Infrastructure.Common.ServiceResponse<long> result = await _handler.Handle(createProductRequest, CancellationToken.None);
 
-        // Mock the IProductRepository to return the product with an Id after adding it
-        _productRepositoryMock.Setup(r => r.AddAsync(It.IsAny<Products>()))
-            .ReturnsAsync(product);
+            // Assert
+            Assert.Equal(HttpStatusCode.Unauthorized, result.statusCode);
+        }
 
-        // Act
-        long result = await _handler.Handle(createProductRequest, CancellationToken.None);
-
-        // Assert
-        Assert.Equal(1, result); // Ensure the returned ID matches the mock data
-        _productRepositoryMock.Verify(r => r.AddAsync(It.IsAny<Products>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task Handle_InvalidRequest_ThrowsException()
-    {
-        // Arrange
-        CreateProduct createProductRequest = new()
+        [Fact]
+        public async Task Handle_ShouldReturnFailure_WhenValidationFails()
         {
-            // Initialize invalid request, for example:
-            Name = "", // Invalid name
-            Price = -10.0m // Invalid price
-        };
+            // Arrange
+            CreateProduct createProductRequest = new() { /* Populate with invalid data */ };
+            ClaimsPrincipal claimsPrincipal = new(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "testuser"),
+                new Claim(ClaimTypes.Role, "Admin")
+            }));
 
-        // Mock validation to return errors
-        ValidationResult validationResult = new(new[] { new ValidationFailure("Name", "Name is required.") });
-        Mock<CreateValidator> validatorMock = new();
-        validatorMock.Setup(v => v.ValidateAsync(createProductRequest, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(validationResult);
+            _mockHttpContextAccessor.Setup(x => x.HttpContext.User).Returns(claimsPrincipal);
 
-        // Act & Assert
-        Exception exception = await Assert.ThrowsAsync<Exception>(() => _handler.Handle(createProductRequest, CancellationToken.None));
-        Assert.Equal("Product is not valid", exception.Message);
+            // Mock the validation failure
+            CreateValidator validator = new();
+            FluentValidation.Results.ValidationResult validationResult = new(new[]
+            {
+                new FluentValidation.Results.ValidationFailure("Field", "Invalid value")
+            });
+            _mockMapper.Setup(m => m.Map<Products>(It.IsAny<CreateProduct>())).Returns(new Products());
+            _mockResourceHelper.Setup(x => x.Shared("NOT_VALID")).Returns("Invalid data");
+
+            // Act
+            Infrastructure.Common.ServiceResponse<long> result = await _handler.Handle(createProductRequest, CancellationToken.None);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.Forbidden, result.statusCode);
+        }
+
+        [Fact]
+        public async Task Handle_ShouldReturnSuccess_WhenProductIsCreated()
+        {
+            // Arrange
+            CreateProduct createProductRequest = new() { Name = "test", Description = "desc" };
+            ClaimsPrincipal claimsPrincipal = new(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "testuser"),
+                new Claim(ClaimTypes.Role, "Admin")
+            }));
+
+            _mockHttpContextAccessor.Setup(x => x.HttpContext.User).Returns(claimsPrincipal);
+            Products product = new() { Id = 1 };
+            _mockMapper.Setup(m => m.Map<Products>(It.IsAny<CreateProduct>())).Returns(product);
+            _mockProductRepository.Setup(repo => repo.AddAsync(It.IsAny<Products>())).ReturnsAsync(product);
+            _mockResourceHelper.Setup(x => x.Product("SUCCESSMESSAGE_PRODUCT_CREATED")).Returns("Product created successfully");
+
+            // Act
+            Infrastructure.Common.ServiceResponse<long> result = await _handler.Handle(createProductRequest, CancellationToken.None);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, result.statusCode);
+            Assert.Equal("Product created successfully", result.message);
+            Assert.Equal(1, result.data);
+        }
+
+        [Fact]
+        public async Task Handle_ShouldReturnInternalError_WhenExceptionOccurs()
+        {
+            // Arrange
+            CreateProduct createProductRequest = new() { /* Populate with necessary data */ };
+            ClaimsPrincipal claimsPrincipal = new(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "testuser"),
+                new Claim(ClaimTypes.Role, "Admin")
+            }));
+
+            _mockHttpContextAccessor.Setup(x => x.HttpContext.User).Returns(claimsPrincipal);
+            _mockMapper.Setup(m => m.Map<Products>(It.IsAny<CreateProduct>())).Throws(new System.Exception("Internal error"));
+            _mockResourceHelper.Setup(x => x.Shared("ERROREMESSAGE_INTERNAL")).Returns("Internal server error");
+
+            // Act
+            Infrastructure.Common.ServiceResponse<long> result = await _handler.Handle(createProductRequest, CancellationToken.None);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.InternalServerError, result.statusCode);
+            Assert.Equal("Internal server error", result.message);
+        }
     }
 }

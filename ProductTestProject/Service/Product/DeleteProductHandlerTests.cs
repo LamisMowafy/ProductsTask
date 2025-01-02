@@ -1,76 +1,129 @@
-﻿namespace ProductTestProject.Service.Product
-{
-    using Application.Services.Product.Command.Delete;
-    using Domain.Models;
-    using Infrastructure.Interfaces;
-    using MediatR;
-    using Moq;
-    using System;
-    using System.Threading;
-    using System.Threading.Tasks;
-    using Xunit;
+﻿using Moq;
+using Xunit;
+using Microsoft.AspNetCore.Http;
+using MediatR;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Security.Claims;
+using System.Net;
+using Domain.Models;
+using Infrastructure.Interfaces;
+using Application.Services.Product.Command.Delete;
+using Resource;
+using System;
 
+namespace Application.Tests
+{
     public class DeleteProductHandlerTests
     {
-        private readonly Mock<IProductRepository> _productRepositoryMock;
+        private readonly Mock<IProductRepository> _mockProductRepository;
+        private readonly Mock<IHttpContextAccessor> _mockHttpContextAccessor;
+        private readonly Mock<IResourceHelper> _mockResourceHelper;
         private readonly DeleteProductHandler _handler;
 
         public DeleteProductHandlerTests()
         {
-            _productRepositoryMock = new Mock<IProductRepository>();
-            _handler = new DeleteProductHandler(_productRepositoryMock.Object);
+            _mockProductRepository = new Mock<IProductRepository>();
+            _mockHttpContextAccessor = new Mock<IHttpContextAccessor>();
+            _mockResourceHelper = new Mock<IResourceHelper>();
+
+            _handler = new DeleteProductHandler(
+                _mockProductRepository.Object,
+                _mockHttpContextAccessor.Object,
+                _mockResourceHelper.Object
+            );
         }
 
         [Fact]
-        public async Task Handle_ValidRequest_DeletesProduct()
+        public async Task Handle_ShouldReturnUnauthorized_WhenUserIsNotAdmin()
         {
             // Arrange
-            DeleteProduct deleteProductRequest = new()
+            var deleteProductRequest = new DeleteProduct { ProductId = 1 };
+            var claimsPrincipal = new ClaimsPrincipal(new ClaimsIdentity(new[]
             {
-                ProductId = 1 // ProductId to delete
-            };
+                new Claim(ClaimTypes.Name, "testuser")
+            }));
 
-            Products product = new()
-            {
-                Id = 1,
-                Name = "Test Product",
-                Price = 10.0m
-            };
-
-            // Mock the repository to return a product when GetByIdAsync is called
-            _productRepositoryMock.Setup(r => r.GetByIdAsync(deleteProductRequest.ProductId))
-                .ReturnsAsync(product);
-
-            // Mock the DeleteAsync to not do anything but to confirm it was called
-            _productRepositoryMock.Setup(r => r.DeleteAsync(It.IsAny<Products>()))
-                .Returns(Task.CompletedTask);
+            _mockHttpContextAccessor.Setup(x => x.HttpContext.User).Returns(claimsPrincipal);
 
             // Act
-            Unit result = await _handler.Handle(deleteProductRequest, CancellationToken.None);
+            var result = await _handler.Handle(deleteProductRequest, CancellationToken.None);
 
             // Assert
-            Assert.Equal(Unit.Value, result); // Ensure that the return value is Unit.Value (indicating no result)
-            _productRepositoryMock.Verify(r => r.GetByIdAsync(deleteProductRequest.ProductId), Times.Once); // Ensure GetByIdAsync was called once
-            _productRepositoryMock.Verify(r => r.DeleteAsync(It.IsAny<Products>()), Times.Once); // Ensure DeleteAsync was called once
+            Assert.Equal(HttpStatusCode.Unauthorized, result.statusCode);
         }
 
         [Fact]
-        public async Task Handle_ProductNotFound_ThrowsException()
+        public async Task Handle_ShouldReturnNotFound_WhenProductDoesNotExist()
         {
             // Arrange
-            DeleteProduct deleteProductRequest = new()
+            var deleteProductRequest = new DeleteProduct { ProductId = 1 };
+            var claimsPrincipal = new ClaimsPrincipal(new ClaimsIdentity(new[]
             {
-                ProductId = 999 // Non-existent ProductId
-            };
+                new Claim(ClaimTypes.Name, "testuser"),
+                new Claim(ClaimTypes.Role, "Admin")
+            }));
 
-            // Mock the repository to return null when no product is found
-            _productRepositoryMock.Setup(r => r.GetByIdAsync(deleteProductRequest.ProductId))
-                .ReturnsAsync((Products)null); // Simulating product not found
+            _mockHttpContextAccessor.Setup(x => x.HttpContext.User).Returns(claimsPrincipal);
 
-            // Act & Assert
-            Exception exception = await Assert.ThrowsAsync<Exception>(() => _handler.Handle(deleteProductRequest, CancellationToken.None));
-            Assert.Equal("Product not found", exception.Message); // You can customize the exception message based on your handler logic
+            // Simulate that the product does not exist in the repository
+            _mockProductRepository.Setup(repo => repo.GetByIdAsync(It.IsAny<long>())).ReturnsAsync((Products)null);
+            _mockResourceHelper.Setup(x => x.Product("ERRORMESSAGE_PRODUCT_NOT_EXIST")).Returns("Product not found");
+
+            // Act
+            var result = await _handler.Handle(deleteProductRequest, CancellationToken.None);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.NotFound, result.statusCode);
+            Assert.Equal("Product not found", result.message);
+        }
+
+        [Fact]
+        public async Task Handle_ShouldReturnSuccess_WhenProductIsDeleted()
+        {
+            // Arrange
+            var deleteProductRequest = new DeleteProduct { ProductId = 1 };
+            var claimsPrincipal = new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "testuser"),
+                new Claim(ClaimTypes.Role, "Admin")
+            }));
+
+            _mockHttpContextAccessor.Setup(x => x.HttpContext.User).Returns(claimsPrincipal);
+            var product = new Products { Id = 1 };
+            _mockProductRepository.Setup(repo => repo.GetByIdAsync(It.IsAny<long>())).ReturnsAsync(product);
+            _mockProductRepository.Setup(repo => repo.DeleteAsync(It.IsAny<Products>())).Returns(Task.CompletedTask);
+            _mockResourceHelper.Setup(x => x.Product("SUCCESSMESSAGE_PRODUCT_DELETED")).Returns("Product deleted successfully");
+
+            // Act
+            var result = await _handler.Handle(deleteProductRequest, CancellationToken.None);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, result.statusCode);
+            Assert.Equal("Product deleted successfully", result.message);
+        }
+
+        [Fact]
+        public async Task Handle_ShouldReturnInternalError_WhenExceptionOccurs()
+        {
+            // Arrange
+            var deleteProductRequest = new DeleteProduct { ProductId = 1 };
+            var claimsPrincipal = new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "testuser"),
+                new Claim(ClaimTypes.Role, "Admin")
+            }));
+
+            _mockHttpContextAccessor.Setup(x => x.HttpContext.User).Returns(claimsPrincipal);
+            _mockProductRepository.Setup(repo => repo.GetByIdAsync(It.IsAny<long>())).Throws(new Exception("Internal error"));
+            _mockResourceHelper.Setup(x => x.Shared("ERROREMESSAGE_INTERNAL")).Returns("Internal server error");
+
+            // Act
+            var result = await _handler.Handle(deleteProductRequest, CancellationToken.None);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.InternalServerError, result.statusCode);
+            Assert.Equal("Internal server error", result.message);
         }
     }
-
 }

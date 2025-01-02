@@ -1,4 +1,4 @@
-using Application.Services.Product.Command.Create;
+﻿using Application.Services.Product.Command.Create;
 using Application.Services.Product.Command.Delete;
 using Application.Services.Product.Command.Update;
 using Application.Services.Product.Queries.GetDetail;
@@ -8,53 +8,49 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-
-namespace ProductTask.Controllers
+namespace ProductTask.Controllers.admin
 {
+    [Route("[controller]/admin")]
     [ApiController]
-    [Route("[controller]")]
-    public class ProductsController : ControllerBase
+    [Authorize(Policy = "Admin")]
+    public class AdminProductController : ControllerBase
     {
         private readonly IMediator _mediator;
-        public ProductsController(IMediator mediator)
+        public AdminProductController(IMediator mediator)
         {
             _mediator = mediator;
         }
 
-        [HttpGet("all", Name = "GetAllProducts")]
-        public async Task<ActionResult<List<ProductDto>>> GetAllProducts()
+        [HttpGet("GetAllProducts")]
+        public async Task<ActionResult<List<ProductDto>>> GetAllProducts([FromQuery] GetProductsListQuery query)
         {
-            List<ProductDto> dtos = await _mediator.Send(new GetProductsListQuery());
-            return Ok(dtos);
+            return Ok(await _mediator.Send(query));
         }
 
-        [HttpGet("{id}", Name = "GetProductById")]
+        [HttpGet("GetProductById/{id}")]
         public async Task<ActionResult<ProductDto>> GetProductById(long id)
         {
             GetProductDetailQuery getDetailQuery = new() { ProductId = id };
             return Ok(await _mediator.Send(getDetailQuery));
         }
-        [Authorize(Policy = "Admin")]
+      
         [HttpPost(Name = "AddProduct")]
         public async Task<ActionResult<long>> Create([FromBody] CreateProduct createCommand)
         {
-            long id = await _mediator.Send(createCommand);
-            return Ok(id);
+            return Ok(await _mediator.Send(createCommand));
         }
 
         [HttpPut(Name = "UpdateProduct")]
         public async Task<ActionResult> Update([FromBody] UpdateProduct updateCommand)
-        {
-            await _mediator.Send(updateCommand);
-            return NoContent();
+        { 
+            return Ok(await _mediator.Send(updateCommand));
         }
 
         [HttpDelete("{id}", Name = "DeleteProduct")]
         public async Task<ActionResult> Delete(long id)
         {
-            DeleteProduct deleteCommand = new() { ProductId = id };
-            await _mediator.Send(deleteCommand);
-            return NoContent();
+            DeleteProduct deleteCommand = new() { ProductId = id }; 
+            return Ok(await _mediator.Send(deleteCommand));
         }
     }
 }
